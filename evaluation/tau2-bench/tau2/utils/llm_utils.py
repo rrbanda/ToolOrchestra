@@ -38,6 +38,8 @@ import sys
 REPO_PATH = os.getenv("REPO_PATH")
 sys.path.append(REPO_PATH)
 from LLM_CALL import get_llm_response
+from openai.types.responses import Response
+from openai.types.chat import ChatCompletion
 
 # litellm._turn_on_debug()
 
@@ -244,7 +246,36 @@ extra_tool = {
       }
     }
   }
+
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-8B")
+
+def convert_tools_for_responses_api(tools_for_chat):
+    """
+    Convert chat completions format tools to responses API format tools
+    [{"type": "function", "function": {...}}]
+    to responses API format tools
+    [{"type": "function", "name": ..., "description": ..., "parameters": ...}]
+    """
+    converted = []
+    for t in tools_for_chat:
+        if t.get("type") == "function" and "function" in t:
+            fn = t["function"]
+            new_t = {
+                "type": "function",
+                "name": fn.get("name"),
+                "description": fn.get("description"),
+                "parameters": fn.get("parameters"),
+            }
+            # Other fields (like strict) if you have them, you can copy them too
+            for k, v in t.items():
+                if k not in ("type", "function"):
+                    new_t[k] = v
+            converted.append(new_t)
+        else:
+            # Already in responses format, return it as is
+            converted.append(t)
+    return converted
+
 def cut_middle_turns(tokenizer,messages,max_length):
     exec_count = 0
     while exec_count<10:
@@ -338,7 +369,7 @@ def to_tau2_messages(
     return tau2_messages
 
 
-def to_litellm_messages(messages: list[Message],model,use_model_tool,domain,role) -> list[dict]:
+def to_litellm_messages(messages: list[Message], model, use_model_tool, domain, role) -> list[dict]:
     """
     Convert a list of Tau2 messages to a list of litellm messages.
     """
@@ -377,17 +408,56 @@ def to_litellm_messages(messages: list[Message],model,use_model_tool,domain,role
                 }
             )
         elif isinstance(message, SystemMessage):
-            if 'qwen' in model.lower() or 'train' in model.lower() or 'huggingface' in model.lower():
+            if 'qwen' in model.lower() or 'train' in model.lower() or 'huggingface' in model.lower() or 'orchestrator' in model.lower():
                 cur_content =  message.content
                 if use_model_tool:
                     for s in POLICY_STRINGS:
                         cur_content = cur_content.replace(s,EXPERT_POLICT)
-                litellm_messages.append({"role": "system", "content": cur_content+'  You are dedicated to provide the best service. Wrap thinking process between <think> </think>, message between <message> </message> and the tool call between <tool_call> </tool_call> .'})
+                litellm_messages.append({"role": "system", "content": cur_content + '  You are dedicated to provide the best service. Wrap thinking process between <think> </think>, message between <message> </message> and the tool call between <tool_call> </tool_call> .'})
             else:
                 litellm_messages.append({"role": "system", "content": message.content})
-    if role=='assistant' and 'gpt-5' in model.lower():
+    if role == 'assistant' and 'gpt-5' in model.lower():
         litellm_messages[-1]['content'] += '\n\nWait, the information I provide may not be correct, please ask again.'
     return litellm_messages
+
+
+def to_responses_api_messages(messages: list[Message]) -> list[dict]:
+    """
+    Convert a list of Tau2 messages to a list of messages for the new Responses API.
+    
+    The Responses API uses a different format:
+    - User messages: {"role": "user", "content": "..."}
+    - Assistant messages: {"role": "assistant", "content": "..."}
+    - Function calls: {"type": "function_call", "call_id": "...", "name": "...", "arguments": "..."}
+    - Function results: {"type": "function_call_output", "call_id": "...", "output": "..."}
+    """
+    responses_messages = []
+    for message in messages:
+        if isinstance(message, UserMessage):
+            responses_messages.append({"role": "user", "content": message.content})
+        elif isinstance(message, AssistantMessage):
+            # Add assistant content if present
+            if message.content:
+                responses_messages.append({"role": "assistant", "content": message.content})
+            # Add function_call items for each tool call
+            if message.is_tool_call():
+                for tc in message.tool_calls:
+                    responses_messages.append({
+                        "type": "function_call",
+                        "call_id": tc.id,
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else tc.arguments
+                    })
+        elif isinstance(message, ToolMessage):
+            # Convert tool message to function_call_output format
+            responses_messages.append({
+                "type": "function_call_output",
+                "call_id": message.id,
+                "output": message.content
+            })
+        elif isinstance(message, SystemMessage):
+            responses_messages.append({"role": "system", "content": message.content})
+    return responses_messages
 
 
 def generate(
@@ -447,9 +517,9 @@ def generate(
         tools_length = len(tokenizer(str(updated_tools))['input_ids'])
         updated_messages = cut_middle_turns(tokenizer=tokenizer,messages=litellm_messages,max_length=23000-tools_length)
         if 'nemotron-ultra' in model.lower() or 'nemotron-super' in model.lower():
-            response = get_llm_response(model=model,messages=updated_messages,tools=updated_tools,return_raw_response=True,temperature=1,model_type='nv/dev',max_length=8000)
+            response = get_llm_response(model=model, messages=updated_messages, tools=updated_tools, return_raw_response=True, temperature=1, model_type='nv/dev', max_length=8000)
         else:
-            response = get_llm_response(model=model,messages=updated_messages,tools=updated_tools,return_raw_response=True,temperature=1,model_config=model_config,model_config_path=model_config_path,model_config_idx=config_idx,model_type='vllm',max_length=8000)
+            response = get_llm_response(model=model, messages=updated_messages, tools=updated_tools, return_raw_response=True, temperature=1, model_config=model_config, model_config_path=model_config_path, model_config_idx=config_idx, model_type='vllm', max_length=8000)
         mode_to_call = None
         tool_calls = []
         input_tokens = 0
@@ -458,7 +528,7 @@ def generate(
         expert_output_tokens = 0
         raw_response = None
         raw_tool_calls = None
-        if isinstance(response,str):
+        if isinstance(response, str):
             response_content = "Wait a minute, I will take it very soon"
         else:
             if response.choices[0].message.content:
@@ -476,7 +546,7 @@ def generate(
             cost += (response.usage.prompt_tokens * TOOL_PRICING[MODEL_TYPE]["input_tokens_per_million"] + response.usage.completion_tokens * TOOL_PRICING[MODEL_TYPE]["output_tokens_per_million"])
         if response_content is not None and isinstance(response_content,str) and len(response_content)>5 and '<message>' in response_content and '</message>' in response_content:
             response_content = response_content.split('<message>')[-1].split('</message>')[0]
-        if not isinstance(response,str) and response.choices[0].message.tool_calls:
+        if not isinstance(response, str) and response.choices[0].message.tool_calls:
             for one_tool_call in response.choices[0].message.tool_calls:
                 one_tool_call_arguments = json.loads(one_tool_call.function.arguments)
                 if one_tool_call.function.name=='call_expert':
@@ -491,36 +561,86 @@ def generate(
                         'name': one_tool_call.function.name,
                         'arguments': one_tool_call_arguments
                     })
-        expert_model = mode_to_call
+        # mode_to_call = 'gpt-5'
+        print(f"DEBUG: model: {model}, updated_messages: {updated_messages}, updated_tools: {updated_tools}, response: {response}, mode_to_call: {mode_to_call}")
+
         if mode_to_call:
-            llm_messages = to_litellm_messages(messages,model=mode_to_call,use_model_tool=False,domain=domain,role=role)
             if 'gpt-5' in mode_to_call:
-                response = get_llm_response(model=mode_to_call,messages=llm_messages,tools=original_tools,return_raw_response=True,max_length=40000)
+                # Use Responses API format for gpt-5 models
+                llm_messages = to_responses_api_messages(messages)
+                original_tools = convert_tools_for_responses_api(original_tools)
+                response = get_llm_response(model=mode_to_call, messages=llm_messages, tools=original_tools, return_raw_response=True, max_length=40000, openai_client_type='openai_response')
             elif 'qwen3' in mode_to_call.lower():
+                llm_messages = to_litellm_messages(messages, model=mode_to_call, use_model_tool=False, domain=domain, role=role)
                 with open(model_config_path) as f:
                     model_config = json.load(f)[mode_to_call]
                 tools_length = len(tokenizer(str(original_tools))['input_ids'])
-                cut_messages = cut_middle_turns(tokenizer=tokenizer,messages=litellm_messages,max_length=23000-tools_length)
-                response = get_llm_response(model=mode_to_call,messages=cut_messages,tools=original_tools,return_raw_response=True,model_config=model_config,model_config_path=model_config_path,model_config_idx=config_idx,model_type='vllm',max_length=8000)
+                cut_messages = cut_middle_turns(tokenizer=tokenizer, messages=litellm_messages, max_length=23000 - tools_length)
+                response = get_llm_response(model=mode_to_call, messages=cut_messages, tools=original_tools, return_raw_response=True, model_config=model_config, model_config_path=model_config_path, model_config_idx=config_idx, model_type='vllm', max_length=8000)
             else:
                 raise ValueError(f'Model {mode_to_call} is not supported')
-            if isinstance(response,str):
+            
+            print(f"DEBUG: mode_to_call: {mode_to_call}")
+
+            if isinstance(response, str):
                 response_content = "Wait a minute, I will take it very soon"
+            elif isinstance(response, Response):
+                response_content = response.output_text
+                expert_input_tokens = response.usage.input_tokens
+                expert_output_tokens = response.usage.output_tokens
+                cost += (expert_input_tokens * TOOL_PRICING[mode_to_call]["input_tokens_per_million"] + expert_output_tokens * TOOL_PRICING[mode_to_call]["output_tokens_per_million"])
             else:
                 response_content = response.choices[0].message.content
                 expert_input_tokens = response.usage.prompt_tokens
                 expert_output_tokens = response.usage.completion_tokens
-                cost += (response.usage.prompt_tokens * TOOL_PRICING[mode_to_call]["input_tokens_per_million"] + response.usage.completion_tokens * TOOL_PRICING[mode_to_call]["output_tokens_per_million"])
+                cost += (expert_input_tokens * TOOL_PRICING[mode_to_call]["input_tokens_per_million"] + expert_output_tokens * TOOL_PRICING[mode_to_call]["output_tokens_per_million"])
+            
             tool_calls = []
-            if not isinstance(response,str) and response.choices[0].message.tool_calls:
-                for one_tool_call in response.choices[0].message.tool_calls:
-                    tool_calls.append({
-                        'name': one_tool_call.function.name,
-                        'arguments': json.loads(one_tool_call.function.arguments)
-                    })
+            # if not isinstance(response, str) and response.choices[0].message.tool_calls:
+            #     for one_tool_call in response.choices[0].message.tool_calls:
+            #         tool_calls.append({
+            #             'name': one_tool_call.function.name,
+            #             'arguments': json.loads(one_tool_call.function.arguments)
+            #         })
+
+            # === 1. Old Chat Completions API Path ===
+            # If there are choices[0].message.tool_calls, follow the old logic
+            if hasattr(response, "choices") and response.choices:
+                message = response.choices[0].message
+                if getattr(message, "tool_calls", None):
+                    for one_tool_call in message.tool_calls:
+                        args = one_tool_call.function.arguments
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except Exception:
+                                # If parsing fails, return the original
+                                print(f"[ERROR] parse tool call arguments failed: {args}")
+                        tool_calls.append({
+                            "name": one_tool_call.function.name,
+                            "arguments": args,
+                        })
+            # === 2. New Responses API Path ===
+            # Responses API doesn't have choices/message, but response.output has various items
+            if hasattr(response, "output"):
+                for item in response.output:
+                    # Self-defined function tool, corresponding to type == "function_call"
+                    if getattr(item, "type", None) == "function_call":
+                        args = getattr(item, "arguments", None)
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except Exception:
+                                print(f"[ERROR] parse tool call arguments failed: {args}")
+                        tool_calls.append({
+                            "name": getattr(item, "name", None),
+                            "arguments": args,
+                        })
+
         if not response_content and not tool_calls:
             response_content = "Wait a minute, I will take it very soon"
         response = {
+            'expert_model': mode_to_call,
             'content': response_content,
             'tool_calls': tool_calls,
         }
@@ -551,7 +671,7 @@ def generate(
             'tool_calls': tool_calls,
         }
     else:
-        response = get_llm_response(model=model,messages=litellm_messages,tools=tools,return_raw_response=True,max_length=40000)
+        response = get_llm_response(model=model, messages=litellm_messages, tools=tools, return_raw_response=True, max_length=40000)
         tool_calls = []
         if not isinstance(response,str) and response.choices[0].message.tool_calls:
             for one_tool_call in response.choices[0].message.tool_calls:

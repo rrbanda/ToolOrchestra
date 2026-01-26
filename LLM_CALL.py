@@ -15,6 +15,7 @@
 
 import openai
 from openai import AzureOpenAI
+from openai import OpenAI
 import requests
 import time
 import os
@@ -271,12 +272,14 @@ def get_claude_token():
     return result
 
 
-def get_openai_client(model):
+def get_azure_openai_client():
     client_id = os.getenv("CLIENT_ID")
     client_secret = os.getenv("CLIENT_SECRET")
+
     token_url = "https://prod.api.nvidia.com/oauth/api/v1/ssa/default/token"
     scope = "azureopenai-readwrite"
     token = get_openai_token(token_url, client_id, client_secret, scope)
+
     openai.api_type = "azure"
     openai.api_base = "https://prod.api.nvidia.com/llm/v1/azure/"
     openai.api_version = "2025-04-01-preview"
@@ -286,32 +289,75 @@ def get_openai_client(model):
         api_version="2025-04-01-preview",
         azure_endpoint="https://prod.api.nvidia.com/llm/v1/azure/"
     )
+    print("AzureOpenAI instance created successfully.")
     return client
 
-def get_llm_response(model,messages,temperature=1.0,return_raw_response=False,tools=None,show_messages=False,model_type=None,max_length=1024,model_config=None,model_config_idx=0,model_config_path=None,payload=None,**kwargs):
+
+def get_openai_client():
+    client_id = os.getenv("CLIENT_ID")
+    client_secret = os.getenv("CLIENT_SECRET")
+
+    token_url = "https://prod.api.nvidia.com/oauth/api/v1/ssa/default/token"
+    scope = "azureopenai-readwrite"
+
+    print("Getting OAuth token...")
+    print(f"client_id: {client_id}, client_secret: {client_secret}, token_url: {token_url}, scope: {scope}")
+    token = get_openai_token(token_url, client_id, client_secret, scope)
+
+    client = OpenAI(
+        api_key=token,
+        base_url="https://prod.api.nvidia.com/llm/v1/azure/v1",
+        default_query={"api-version": "preview"}, 
+    )
+    print("OpenAI instance created successfully.")
+    return client
+
+def get_llm_response(model, messages, temperature=1.0, return_raw_response=False, tools=None, show_messages=False, model_type=None, max_length=1024, model_config=None, model_config_idx=0, model_config_path=None, payload=None, openai_client_type='azure_openai', **kwargs):
     if isinstance(messages,str):
         messages = [{'role': 'user','content': messages}]
-    if model in ['o3','o3-mini','gpt-4o','o3-high','gpt-5','gpt-5-mini','gpt-4.1','gpt-4o-mini']:
+    if model in ['o3', 'o3-mini', 'gpt-4o', 'o3-high', 'gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4o-mini']:
         if max_length==1024:
             max_length = 40000
         if model in ['gpt-4.1','gpt-4o-mini']:
             max_length = 8000
-        openai_client = get_openai_client(model=model)
+        
         answer = ''
+
         while answer=='':
             try:
-                chat_completion = openai_client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=temperature,
-                    tools=tools,
-                    max_completion_tokens=max_length
-                )
-                if return_raw_response:
-                    answer = chat_completion
+                if openai_client_type == 'azure_openai':
+                    openai_client = get_azure_openai_client()
+                    chat_completion = openai_client.chat.completions.create(
+                        model=model,
+                        messages = messages,
+                        temperature = temperature,
+                        tools = tools,
+                        max_completion_tokens = max_length,
+                    )
+                    if return_raw_response:
+                        answer = chat_completion
+                    else:
+                        answer = chat_completion.choices[0].message.content
+                elif openai_client_type == 'openai_response':
+                    openai_client = get_openai_client()
+                    response = openai_client.responses.create(
+                        model = model,
+                        input = messages,
+                        temperature = temperature,
+                        tools = tools,
+                        max_output_tokens = max_length,
+                        reasoning = {"effort": "high"},
+                    )
+                    if return_raw_response:
+                        answer = response
+                    else:
+                        answer = response.output_text
                 else:
-                    answer = chat_completion.choices[0].message.content
+                    raise ValueError(f"Invalid openai_client_type: {openai_client_type}")
             except Exception as error:
+                # print(f"SHIZHE DEBUG: tools: {tools}")
+                print(f"SHIZHE DEBUG: messages: {messages}")
+                print('[ERROR] Get LLM Response from OpenAI', error)
                 time.sleep(60)
         return answer
     elif model_type=='nv/dev':

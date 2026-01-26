@@ -381,7 +381,7 @@ def to_litellm_messages(messages: list[Message],model,use_model_tool) -> list[di
                 }
             )
         elif isinstance(message, SystemMessage):
-            if 'qwen' in model.lower() or 'train' in model.lower() or 'huggingface' in model.lower():
+            if 'qwen' in model.lower() or 'train' in model.lower() or 'huggingface' in model.lower() or 'orchestrator' in model.lower():
                 cur_content =  message.content
                 if use_model_tool:
                     for s in POLICY_STRINGS:

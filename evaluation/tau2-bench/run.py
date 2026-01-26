@@ -108,7 +108,8 @@ while True:
         if j['reason'].strip().lower()=='held)':
             os.system(f"scancel {j['id']}")
             time.sleep(120)
-    cur_ckpt_dir = os.getenv("CKPT_DIR")
+    cur_ckpt_dir = os.getenv("CKPT_DIR") #export CKPT_DIR="/lustre/fsw/portfolios/llmservice/users/sdiao/ToolOrchestra/Nemotron-Orchestrator-8B-qwen"
+
     log(f"CKPT_DIR = {cur_ckpt_dir}")
     serve_collections = []
     for repeat in range(SERVE_REPEAT):
@@ -205,7 +206,3 @@ while True:
             f"--max-steps 200 --output_file outputs/airline.json "
             f"--model_config_path eaa.json --use_model_tool")
     log("========== Finished AIRLINE, loop iteration complete ==========")
-
-
-        
-

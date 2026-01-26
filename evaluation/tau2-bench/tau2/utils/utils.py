@@ -13,7 +13,7 @@ res = load_dotenv()
 #     logger.warning("No .env file found")
 
 # DATA_DIR = Path('data_dir')
-data_dir = os.path.join(os.environ.get('REPO_PATH'), 'evaluation/data_dir')
+data_dir = os.path.join(os.environ.get('REPO_PATH'), 'data')
 DATA_DIR = Path(data_dir)
 
 def get_dict_hash(obj: dict) -> str:
