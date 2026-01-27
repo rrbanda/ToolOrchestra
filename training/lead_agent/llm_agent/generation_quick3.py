@@ -1115,7 +1115,7 @@ class LLMGenerationManager:
                     attempt_str = str_cut['string_after_cut']
                     if not attempt_str.startswith('Attempt') and len(attempt_str)>0:
                         attempt_str = 'Attempt answer: '+attempt_str
-                    str_cut = cut_seq(tokenizer=tokenizer,seq=code_str+attempt_str,l=16000)
+                    str_cut = cut_seq(tokenizer=tokenizer,seq=code_str+attempt_str,l=24000)
                     code_attempt_str = str_cut['string_after_cut']
                     code_attempt_str_len = str_cut['effective_length']
                     if not code_attempt_str.startswith('```') and len(code_attempt_str)>0:
