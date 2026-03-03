@@ -1,0 +1,70 @@
+site_name: orchestrator-rhoai
+site_description: Deploy NVIDIA ToolOrchestra on Red Hat OpenShift AI
+site_url: https://orchestrator-rhoai.github.io/
+
+docs_dir: .
+site_dir: ../site
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.tabs.link
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Prerequisites: getting-started/prerequisites.md
+    - Quick Start: getting-started/quickstart.md
+    - Cluster Setup: getting-started/cluster-setup.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Model Strategy: architecture/model-strategy.md
+    - Tool Routing: architecture/tool-routing.md
+  - Guides:
+    - Deploy Orchestrator: guides/deploy-orchestrator.md
+    - Deploy Specialists: guides/deploy-specialists.md
+    - Configure Tools: guides/configure-tools.md
+    - Run Evaluation: guides/run-evaluation.md
+    - Training Pipeline: guides/training-pipeline.md
+    - Production Hardening: guides/production-hardening.md
+  - Reference:
+    - API: reference/api.md
+    - Configuration: reference/configuration.md
+    - Model Mapping: reference/model-mapping.md
+    - Troubleshooting: reference/troubleshooting.md
+  - ADRs:
+    - "0001 Use KServe for Serving": adr/0001-use-kserve-for-serving.md
+    - "0002 Open Models Only": adr/0002-open-models-only.md
+    - "0003 Tiered Deployment": adr/0003-tiered-deployment.md
+    - "0004 Gateway Pattern": adr/0004-gateway-pattern.md
+    - "0005 Kustomize over Helm": adr/0005-kustomize-over-helm.md
+    - Template: adr/template.md
+  - Blog: blog/index.md

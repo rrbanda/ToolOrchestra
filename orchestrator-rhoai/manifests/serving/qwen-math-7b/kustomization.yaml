@@ -1,0 +1,10 @@
+# TODO: Add serving-runtime.yaml and inference-service.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orchestrator-rhoai
+
+commonLabels:
+  app.kubernetes.io/part-of: orchestrator-rhoai
+
+resources: []

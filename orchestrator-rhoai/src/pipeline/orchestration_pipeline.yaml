@@ -1,0 +1,236 @@
+# PIPELINE DEFINITION
+# Name: toolorchestra-responses-api
+# Description: ToolOrchestra orchestration via LlamaStack Responses API. Uses Nemotron-Orchestrator-8B with MCP tools for server-side agentic orchestration -- tool discovery, execution, and synthesis in one call.
+# Inputs:
+#    instructions: str [Default: 'You are good at using tools. Search Red Hat documentation when you need information to answer the question accurately.']
+#    llamastack_url: str [Default: 'http://llamastack-service.llamastack.svc.cluster.local:8321']
+#    max_output_tokens: int [Default: 1024.0]
+#    mcp_server_label: str [Default: 'rhokp']
+#    mcp_server_url: str [Default: 'http://mcp-server.rhokp.svc.cluster.local:8010/mcp']
+#    model: str [Default: 'vllm-orchestrator/orchestrator-8b']
+#    question: str [Default: 'What are the steps to deploy a model on OpenShift AI?']
+components:
+  comp-format-output:
+    executorLabel: exec-format-output
+    inputDefinitions:
+      parameters:
+        result_json:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-orchestrate-via-responses:
+    executorLabel: exec-orchestrate-via-responses
+    inputDefinitions:
+      parameters:
+        instructions:
+          parameterType: STRING
+        llamastack_url:
+          parameterType: STRING
+        max_output_tokens:
+          parameterType: NUMBER_INTEGER
+        mcp_server_label:
+          parameterType: STRING
+        mcp_server_url:
+          parameterType: STRING
+        model:
+          parameterType: STRING
+        question:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-format-output:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - format_output
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef format_output(result_json: str) -> str:\n    \"\"\"Format the\
+          \ orchestration result for display.\"\"\"\n    import json\n\n    data =\
+          \ json.loads(result_json)\n\n    lines = [\n        f\"Question: {data['question']}\"\
+          ,\n        f\"Status: {data['status']}\",\n        f\"Latency: {data['latency_ms']}ms\"\
+          ,\n        f\"Tokens: {data['input_tokens']} in / {data['output_tokens']}\
+          \ out\",\n        f\"Response ID: {data['response_id']}\",\n        \"\"\
+          ,\n        \"Tool trace:\",\n    ]\n    for t in data.get(\"tool_trace\"\
+          , []):\n        step = t.get(\"step\", \"\")\n        if step == \"discover\"\
+          :\n            lines.append(f\"  Discovered: {t['tools']}\")\n        elif\
+          \ step == \"call\":\n            lines.append(f\"  Called: {t['tool']}({t.get('arguments',\
+          \ '')[:100]})\")\n        elif step == \"result\":\n            lines.append(f\"\
+          \  Result: {t['output_length']} chars\")\n\n    lines.append(\"\")\n   \
+          \ lines.append(f\"Answer: {data['answer']}\")\n\n    summary = \"\\n\".join(lines)\n\
+          \    print(summary)\n    return summary\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+    exec-orchestrate-via-responses:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - orchestrate_via_responses
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'httpx>=0.28.0'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef orchestrate_via_responses(\n    question: str,\n    llamastack_url:\
+          \ str,\n    model: str,\n    mcp_server_url: str,\n    mcp_server_label:\
+          \ str,\n    max_output_tokens: int,\n    instructions: str,\n) -> str:\n\
+          \    \"\"\"Run the ToolOrchestra agentic loop via LlamaStack Responses API.\n\
+          \n    A single POST /v1/responses call triggers the full orchestration:\n\
+          \    the orchestrator model auto-discovers MCP tools, decides which to call,\n\
+          \    the server executes them, feeds results back, and repeats until the\n\
+          \    model produces a final answer.\n    \"\"\"\n    import json\n    import\
+          \ time\n\n    import httpx\n\n    if not question or not question.strip():\n\
+          \        raise ValueError(\"Question must be a non-empty string\")\n\n \
+          \   start = time.monotonic()\n\n    payload = {\n        \"model\": model,\n\
+          \        \"input\": question.strip(),\n        \"tools\": [\n          \
+          \  {\n                \"type\": \"mcp\",\n                \"server_label\"\
+          : mcp_server_label,\n                \"server_url\": mcp_server_url,\n \
+          \               \"require_approval\": \"never\",\n            }\n      \
+          \  ],\n        \"max_output_tokens\": max_output_tokens,\n        \"instructions\"\
+          : instructions,\n    }\n\n    with httpx.Client(timeout=300.0) as client:\n\
+          \        resp = client.post(f\"{llamastack_url.rstrip('/')}/v1/responses\"\
+          , json=payload)\n        resp.raise_for_status()\n        data = resp.json()\n\
+          \n    latency_ms = round((time.monotonic() - start) * 1000)\n\n    tool_trace\
+          \ = []\n    answer_text = \"\"\n    for item in data.get(\"output\", []):\n\
+          \        item_type = item.get(\"type\", \"\")\n        if item_type == \"\
+          mcp_list_tools\":\n            tool_trace.append({\n                \"step\"\
+          : \"discover\",\n                \"tools\": [t[\"name\"] for t in item.get(\"\
+          tools\", [])],\n            })\n        elif item_type == \"mcp_call\":\n\
+          \            tool_trace.append({\n                \"step\": \"call\",\n\
+          \                \"tool\": item.get(\"name\", \"\"),\n                \"\
+          arguments\": item.get(\"arguments\", \"\"),\n            })\n        elif\
+          \ item_type == \"mcp_call_output\":\n            tool_trace.append({\n \
+          \               \"step\": \"result\",\n                \"output_length\"\
+          : len(str(item.get(\"output\", \"\"))),\n            })\n        elif item_type\
+          \ == \"message\":\n            for content_block in item.get(\"content\"\
+          , []):\n                text = content_block.get(\"text\", \"\")\n     \
+          \           if \"</think>\" in text:\n                    text = text.split(\"\
+          </think>\")[-1].strip()\n                answer_text = text\n\n    usage\
+          \ = data.get(\"usage\", {})\n\n    return json.dumps({\n        \"question\"\
+          : question.strip(),\n        \"answer\": answer_text or \"(No answer produced)\"\
+          ,\n        \"response_id\": data.get(\"id\", \"\"),\n        \"status\"\
+          : data.get(\"status\", \"\"),\n        \"tool_trace\": tool_trace,\n   \
+          \     \"latency_ms\": latency_ms,\n        \"input_tokens\": usage.get(\"\
+          input_tokens\", 0),\n        \"output_tokens\": usage.get(\"output_tokens\"\
+          , 0),\n    })\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+pipelineInfo:
+  description: ToolOrchestra orchestration via LlamaStack Responses API. Uses Nemotron-Orchestrator-8B
+    with MCP tools for server-side agentic orchestration -- tool discovery, execution,
+    and synthesis in one call.
+  name: toolorchestra-responses-api
+root:
+  dag:
+    tasks:
+      format-output:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-format-output
+        dependentTasks:
+        - orchestrate-via-responses
+        inputs:
+          parameters:
+            result_json:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: orchestrate-via-responses
+        taskInfo:
+          name: format-output
+      orchestrate-via-responses:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-orchestrate-via-responses
+        inputs:
+          parameters:
+            instructions:
+              componentInputParameter: instructions
+            llamastack_url:
+              componentInputParameter: llamastack_url
+            max_output_tokens:
+              componentInputParameter: max_output_tokens
+            mcp_server_label:
+              componentInputParameter: mcp_server_label
+            mcp_server_url:
+              componentInputParameter: mcp_server_url
+            model:
+              componentInputParameter: model
+            question:
+              componentInputParameter: question
+        taskInfo:
+          name: orchestrate-via-responses
+  inputDefinitions:
+    parameters:
+      instructions:
+        defaultValue: You are good at using tools. Search Red Hat documentation when
+          you need information to answer the question accurately.
+        isOptional: true
+        parameterType: STRING
+      llamastack_url:
+        defaultValue: http://llamastack-service.llamastack.svc.cluster.local:8321
+        isOptional: true
+        parameterType: STRING
+      max_output_tokens:
+        defaultValue: 1024.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      mcp_server_label:
+        defaultValue: rhokp
+        isOptional: true
+        parameterType: STRING
+      mcp_server_url:
+        defaultValue: http://mcp-server.rhokp.svc.cluster.local:8010/mcp
+        isOptional: true
+        parameterType: STRING
+      model:
+        defaultValue: vllm-orchestrator/orchestrator-8b
+        isOptional: true
+        parameterType: STRING
+      question:
+        defaultValue: What are the steps to deploy a model on OpenShift AI?
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.16.0

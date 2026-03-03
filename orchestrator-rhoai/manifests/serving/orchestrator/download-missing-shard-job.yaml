@@ -1,0 +1,82 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: download-missing-shard
+  namespace: orchestrator-rhoai
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 7200
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: download
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          command:
+            - bash
+            - -ec
+            - |
+              echo "=== Filesystem after expansion ==="
+              df -h /models
+              echo ""
+              echo "=== Installing huggingface_hub ==="
+              pip install -q huggingface_hub
+              echo ""
+              echo "=== Downloading missing shard ==="
+              python3 << 'PYEOF'
+              from huggingface_hub import hf_hub_download
+              import os
+              target = '/models/Nemotron-Orchestrator-8B/model-00001-of-00007.safetensors'
+              if os.path.exists(target):
+                  size = os.path.getsize(target)
+                  if size > 1_000_000_000:
+                      print(f'File already exists ({size/1e9:.2f} GB), skipping.')
+                      exit(0)
+                  else:
+                      print(f'Incomplete file ({size} bytes), removing...')
+                      os.remove(target)
+              print('Downloading model-00001-of-00007.safetensors...')
+              hf_hub_download(
+                  repo_id='nvidia/Nemotron-Orchestrator-8B',
+                  filename='model-00001-of-00007.safetensors',
+                  local_dir='/models/Nemotron-Orchestrator-8B',
+              )
+              print('Download complete.')
+              PYEOF
+              echo ""
+              echo "=== Verifying all 7 shards ==="
+              all_ok=true
+              for i in 1 2 3 4 5 6 7; do
+                f="/models/Nemotron-Orchestrator-8B/model-0000${i}-of-00007.safetensors"
+                if [ -f "$f" ]; then
+                  size=$(du -h "$f" | cut -f1)
+                  echo "  OK: model-0000${i}-of-00007.safetensors ($size)"
+                else
+                  echo "  MISSING: model-0000${i}-of-00007.safetensors"
+                  all_ok=false
+                fi
+              done
+              echo ""
+              echo "=== Final disk usage ==="
+              df -h /models
+              du -sh /models/Nemotron-Orchestrator-8B/
+              if [ "$all_ok" = true ]; then
+                echo "ALL SHARDS VERIFIED OK"
+              else
+                echo "ERROR: Some shards are missing!"
+                exit 1
+              fi
+          resources:
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+            limits:
+              cpu: "2"
+              memory: "8Gi"
+          volumeMounts:
+            - name: model-storage
+              mountPath: /models
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: model-weights

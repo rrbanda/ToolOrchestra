@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: orchestrator-gateway
+  namespace: orchestrator-rhoai
+  labels:
+    app.kubernetes.io/name: orchestrator-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: orchestrator-rhoai
+spec:
+  to:
+    kind: Service
+    name: orchestrator-gateway
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+  wildcardPolicy: None

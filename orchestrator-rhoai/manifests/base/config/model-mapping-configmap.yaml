@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-mapping
+  namespace: orchestrator-rhoai
+  labels:
+    app.kubernetes.io/name: model-mapping
+    app.kubernetes.io/component: config
+    app.kubernetes.io/part-of: orchestrator-rhoai
+data:
+  mapping.json: |
+    {
+      "reasoner-1": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "reasoner-2": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "reasoner-3": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "answer-1": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "answer-2": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "answer-3": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "answer-4": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "answer-math-1": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "answer-math-2": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "search-1": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "search-2": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      },
+      "search-3": {
+        "model": "llama-32-3b-instruct",
+        "endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+      }
+    }

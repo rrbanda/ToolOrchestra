@@ -1,0 +1,219 @@
+# PIPELINE DEFINITION
+# Name: toolorchestra-function-tools
+# Description: Demonstrates the orchestrator selecting from custom function tool definitions (enhance_reasoning, answer, search). Shows how the RL-trained orchestrator reasons about which tool to use.
+# Inputs:
+#    instructions: str [Default: 'You are good at using tools.']
+#    llamastack_url: str [Default: 'http://llamastack-service.llamastack.svc.cluster.local:8321']
+#    max_output_tokens: int [Default: 1024.0]
+#    model: str [Default: 'vllm-orchestrator/orchestrator-8b']
+#    question: str [Default: 'What is 12 factorial?']
+#    tool_definitions_json: str [Default: '[{"type": "function", "name": "enhance_reasoning", "description": "Analyze the problem step by step with detailed reasoning. Use for complex problems that need careful analysis.", "parameters": {"type": "object", "properties": {"model": {"type": "string", "description": "Specialist model. Choices: [\"reasoner-1\", \"reasoner-2\", \"reasoner-3\"]"}}, "required": ["model"]}}, {"type": "function", "name": "answer", "description": "Give the final answer directly. Use when you have enough information.", "parameters": {"type": "object", "properties": {"model": {"type": "string", "description": "Answer model. Choices: [\"answer-1\", \"answer-math-1\", \"answer-math-2\"]"}}, "required": ["model"]}}, {"type": "function", "name": "search", "description": "Search for missing information needed to solve the problem.", "parameters": {"type": "object", "properties": {"model": {"type": "string", "description": "Search model. Choices: [\"search-1\", \"search-2\"]"}}, "required": ["model"]}}]']
+components:
+  comp-format-tool-selection:
+    executorLabel: exec-format-tool-selection
+    inputDefinitions:
+      parameters:
+        result_json:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-orchestrator-tool-selection:
+    executorLabel: exec-orchestrator-tool-selection
+    inputDefinitions:
+      parameters:
+        instructions:
+          parameterType: STRING
+        llamastack_url:
+          parameterType: STRING
+        max_output_tokens:
+          parameterType: NUMBER_INTEGER
+        model:
+          parameterType: STRING
+        question:
+          parameterType: STRING
+        tool_definitions_json:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-format-tool-selection:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - format_tool_selection
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef format_tool_selection(result_json: str) -> str:\n    \"\"\"Format\
+          \ the orchestrator's tool selection.\"\"\"\n    import json\n\n    data\
+          \ = json.loads(result_json)\n\n    lines = [\n        \"=== PIPELINE: Function\
+          \ Tool Selection ===\",\n        \"\",\n        f\"Question: {data['question']}\"\
+          ,\n        f\"Latency: {data['latency_ms']}ms\",\n        \"\",\n      \
+          \  \"Orchestrator's tool selection:\",\n    ]\n    if data[\"tool_calls\"\
+          ]:\n        for tc in data[\"tool_calls\"]:\n            lines.append(f\"\
+          \  Tool: {tc['tool']}\")\n            lines.append(f\"  Arguments: {tc['arguments']}\"\
+          )\n    else:\n        lines.append(\"  (No tool called -- direct answer)\"\
+          )\n        lines.append(f\"  Response: {data['text_output'][:300]}\")\n\n\
+          \    tokens = data.get(\"tokens\", {})\n    lines.append(\"\")\n    lines.append(f\"\
+          Tokens: {tokens.get('input_tokens', 0)} in / {tokens.get('output_tokens',\
+          \ 0)} out\")\n\n    output = \"\\n\".join(lines)\n    print(output)\n  \
+          \  return output\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+    exec-orchestrator-tool-selection:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - orchestrator_tool_selection
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'httpx>=0.28.0'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef orchestrator_tool_selection(\n    question: str,\n    llamastack_url:\
+          \ str,\n    model: str,\n    tool_definitions_json: str,\n    max_output_tokens:\
+          \ int,\n    instructions: str,\n) -> str:\n    \"\"\"Orchestrator selects\
+          \ which tool to call for the given question.\"\"\"\n    import json\n  \
+          \  import time\n\n    import httpx\n\n    tools = json.loads(tool_definitions_json)\n\
+          \    start = time.monotonic()\n\n    payload = {\n        \"model\": model,\n\
+          \        \"input\": question.strip(),\n        \"tools\": tools,\n     \
+          \   \"max_output_tokens\": max_output_tokens,\n        \"instructions\"\
+          : instructions,\n    }\n    with httpx.Client(timeout=300.0) as client:\n\
+          \        resp = client.post(f\"{llamastack_url.rstrip('/')}/v1/responses\"\
+          , json=payload)\n        resp.raise_for_status()\n        data = resp.json()\n\
+          \n    tool_calls = []\n    text_output = \"\"\n    for item in data.get(\"\
+          output\", []):\n        if item.get(\"type\") == \"function_call\":\n  \
+          \          tool_calls.append({\n                \"tool\": item.get(\"name\"\
+          , \"\"),\n                \"arguments\": item.get(\"arguments\", \"\"),\n\
+          \            })\n        elif item.get(\"type\") == \"message\":\n     \
+          \       for c in item.get(\"content\", []):\n                t = c.get(\"\
+          text\", \"\")\n                if \"</think>\" in t:\n                 \
+          \   t = t.split(\"</think>\")[-1].strip()\n                text_output =\
+          \ t\n\n    return json.dumps({\n        \"question\": question.strip(),\n\
+          \        \"tool_calls\": tool_calls,\n        \"text_output\": text_output,\n\
+          \        \"latency_ms\": round((time.monotonic() - start) * 1000),\n   \
+          \     \"tokens\": data.get(\"usage\", {}),\n    })\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+pipelineInfo:
+  description: Demonstrates the orchestrator selecting from custom function tool definitions
+    (enhance_reasoning, answer, search). Shows how the RL-trained orchestrator reasons
+    about which tool to use.
+  name: toolorchestra-function-tools
+root:
+  dag:
+    tasks:
+      format-tool-selection:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-format-tool-selection
+        dependentTasks:
+        - orchestrator-tool-selection
+        inputs:
+          parameters:
+            result_json:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: orchestrator-tool-selection
+        taskInfo:
+          name: format-tool-selection
+      orchestrator-tool-selection:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-orchestrator-tool-selection
+        inputs:
+          parameters:
+            instructions:
+              componentInputParameter: instructions
+            llamastack_url:
+              componentInputParameter: llamastack_url
+            max_output_tokens:
+              componentInputParameter: max_output_tokens
+            model:
+              componentInputParameter: model
+            question:
+              componentInputParameter: question
+            tool_definitions_json:
+              componentInputParameter: tool_definitions_json
+        taskInfo:
+          name: orchestrator-tool-selection
+  inputDefinitions:
+    parameters:
+      instructions:
+        defaultValue: You are good at using tools.
+        isOptional: true
+        parameterType: STRING
+      llamastack_url:
+        defaultValue: http://llamastack-service.llamastack.svc.cluster.local:8321
+        isOptional: true
+        parameterType: STRING
+      max_output_tokens:
+        defaultValue: 1024.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      model:
+        defaultValue: vllm-orchestrator/orchestrator-8b
+        isOptional: true
+        parameterType: STRING
+      question:
+        defaultValue: What is 12 factorial?
+        isOptional: true
+        parameterType: STRING
+      tool_definitions_json:
+        defaultValue: '[{"type": "function", "name": "enhance_reasoning", "description":
+          "Analyze the problem step by step with detailed reasoning. Use for complex
+          problems that need careful analysis.", "parameters": {"type": "object",
+          "properties": {"model": {"type": "string", "description": "Specialist model.
+          Choices: [\"reasoner-1\", \"reasoner-2\", \"reasoner-3\"]"}}, "required":
+          ["model"]}}, {"type": "function", "name": "answer", "description": "Give
+          the final answer directly. Use when you have enough information.", "parameters":
+          {"type": "object", "properties": {"model": {"type": "string", "description":
+          "Answer model. Choices: [\"answer-1\", \"answer-math-1\", \"answer-math-2\"]"}},
+          "required": ["model"]}}, {"type": "function", "name": "search", "description":
+          "Search for missing information needed to solve the problem.", "parameters":
+          {"type": "object", "properties": {"model": {"type": "string", "description":
+          "Search model. Choices: [\"search-1\", \"search-2\"]"}}, "required": ["model"]}}]'
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.16.0

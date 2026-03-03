@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orchestrator-rhoai"
+version = "0.1.0"
+description = "Deploy NVIDIA ToolOrchestra on Red Hat OpenShift AI"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.12"
+authors = [
+    { name = "ToolOrchestra Contributors" }
+]
+keywords = ["toolorchestra", "openshift", "rhoai", "kubernetes"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+]
+[project.urls]
+Homepage = "https://github.com/org/orchestrator-rhoai"
+Repository = "https://github.com/org/orchestrator-rhoai"
+Documentation = "https://github.com/org/orchestrator-rhoai#readme"
+Issues = "https://github.com/org/orchestrator-rhoai/issues"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 99
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM", "TCH", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint.isort]
+known-first-party = ["gateway", "retrieval", "sandbox", "eval"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = [
+    "src/gateway/tests",
+    "src/retrieval/tests",
+    "src/code_sandbox/tests",
+    "src/evaluation/tests",
+]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "unit: Unit tests (no external deps)",
+    "integration: Integration tests (require cluster)",
+    "e2e: End-to-end tests (require full deployment)",
+]
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

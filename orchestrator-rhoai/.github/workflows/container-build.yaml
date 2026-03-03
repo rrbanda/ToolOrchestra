@@ -1,0 +1,55 @@
+name: Container Build
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: gateway
+            context: src/gateway
+            file: src/gateway/Containerfile
+          - name: retrieval
+            context: src/retrieval
+            file: src/retrieval/Containerfile
+          - name: code-sandbox
+            context: src/code_sandbox
+            file: src/code_sandbox/Containerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Log in to GitHub Container Registry
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}/${{ matrix.service.name }}"
+          SHA_TAG="sha-${{ github.sha }}"
+
+          podman build -t "${IMAGE}:${SHA_TAG}" -t "${IMAGE}:latest" \
+            -f ${{ matrix.service.file }} ${{ matrix.service.context }}
+
+          podman push "${IMAGE}:${SHA_TAG}"
+          podman push "${IMAGE}:latest"
+
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "ghcr.io/${{ github.repository }}/${{ matrix.service.name }}:sha-${{ github.sha }}"
+          format: "table"
+          exit-code: "0"
+          ignore-unfixed: true
+          severity: "CRITICAL,HIGH"

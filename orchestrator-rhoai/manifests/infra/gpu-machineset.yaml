@@ -1,0 +1,80 @@
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  name: ocp-2qkbk-gpu-us-east-2a
+  namespace: openshift-machine-api
+  labels:
+    machine.openshift.io/cluster-api-cluster: ocp-2qkbk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: ocp-2qkbk
+      machine.openshift.io/cluster-api-machineset: ocp-2qkbk-gpu-us-east-2a
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: ocp-2qkbk
+        machine.openshift.io/cluster-api-machine-role: worker
+        machine.openshift.io/cluster-api-machine-type: worker
+        machine.openshift.io/cluster-api-machineset: ocp-2qkbk-gpu-us-east-2a
+    spec:
+      lifecycleHooks: {}
+      metadata:
+        labels:
+          node-role.kubernetes.io/worker: ""
+          gpu-node: "true"
+      providerSpec:
+        value:
+          ami:
+            id: ami-0fd7c367ed8a90d52
+          apiVersion: machine.openshift.io/v1beta1
+          blockDevices:
+            - ebs:
+                encrypted: true
+                iops: 0
+                kmsKey:
+                  arn: ""
+                volumeSize: 200
+                volumeType: gp3
+          credentialsSecret:
+            name: aws-cloud-credentials
+          deviceIndex: 0
+          iamInstanceProfile:
+            id: ocp-2qkbk-worker-profile
+          instanceType: g6.2xlarge
+          kind: AWSMachineProviderConfig
+          metadata:
+            creationTimestamp: null
+          placement:
+            availabilityZone: us-east-2a
+            region: us-east-2
+          securityGroups:
+            - filters:
+                - name: tag:Name
+                  values:
+                    - ocp-2qkbk-node
+            - filters:
+                - name: tag:Name
+                  values:
+                    - ocp-2qkbk-lb
+          subnet:
+            filters:
+              - name: tag:Name
+                values:
+                  - ocp-2qkbk-subnet-private-us-east-2a
+          tags:
+            - name: kubernetes.io/cluster/ocp-2qkbk
+              value: owned
+            - name: Stack
+              value: project openshift-cluster-v7hjl
+            - name: config
+              value: openshift-cluster
+            - name: guid
+              value: v7hjl
+            - name: owner
+              value: unknown
+            - name: uuid
+              value: e818b11f-2b67-57f2-ad10-13f3e8422dec
+          userDataSecret:
+            name: worker-user-data

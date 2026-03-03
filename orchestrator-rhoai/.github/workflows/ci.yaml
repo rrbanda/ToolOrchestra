@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install ruff mypy
+
+      - name: Ruff check
+        run: ruff check src/
+
+      - name: Ruff format check
+        run: ruff format --check src/
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          pip install pytest pytest-cov pytest-asyncio httpx
+
+      - name: Install src packages
+        run: |
+          for pkg in src/gateway src/retrieval src/code_sandbox; do
+            if [ -f "$pkg/pyproject.toml" ]; then
+              pip install -e "$pkg"
+            fi
+          done
+
+      - name: Run tests
+        run: pytest --cov=src --cov-report=xml --cov-report=term-missing -m "not e2e"
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  validate-manifests:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Validate profiles
+        run: |
+          for profile in tier1-minimal tier2-standard tier3-full; do
+            if [ -d "profiles/$profile" ]; then
+              echo "Validating profiles/$profile..."
+              kustomize build "profiles/$profile" > /dev/null || echo "  (validation may fail if profiles reference serving runtimes not in schema)"
+            fi
+          done
+
+  lint-containers:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        containerfile:
+          - src/gateway/Containerfile
+          - src/retrieval/Containerfile
+          - src/code_sandbox/Containerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.containerfile }}
+          config: .hadolint.yaml

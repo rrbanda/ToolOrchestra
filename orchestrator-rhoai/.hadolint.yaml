@@ -1,0 +1,9 @@
+ignored:
+  - DL3008  # pin versions in apt-get
+  - DL3013  # pin versions in pip
+
+trustedRegistries:
+  - registry.redhat.io
+  - quay.io
+  - ghcr.io
+  - docker.io

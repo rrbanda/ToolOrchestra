@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.mypy_cache/
+
+# Linting
+.ruff_cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Secrets — never commit
+keys/
+*.key
+*.pem
+credentials.json
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Model weights — too large for git
+models/
+*.bin
+*.safetensors
+*.gguf
+*.pt
+*.onnx
+
+# FAISS indexes
+*.faiss
+*.index
+
+# Build artifacts
+site/
+
+# OS
+Thumbs.db
