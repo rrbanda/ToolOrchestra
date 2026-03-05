@@ -1,0 +1,477 @@
+# PIPELINE DEFINITION
+# Name: toolorchestra-comparison
+# Description: Side-by-side comparison: Direct specialist answer vs Orchestrator-8B coordinated answer. Shows the value of orchestration.
+# Inputs:
+#    max_output_tokens: int [Default: 2048.0]
+#    max_turns: int [Default: 10.0]
+#    model_mapping_json: str [Default: '{"search-1": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "search-2": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "search-3": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "reasoner-1": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "reasoner-2": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "reasoner-3": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "answer-1": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "answer-2": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "answer-3": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "answer-4": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "answer-math-1": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}, "answer-math-2": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1", "model": "llama-32-3b-instruct"}}']
+#    orchestrator_endpoint: str [Default: 'http://orchestrator-8b-predictor.orchestrator-rhoai.svc.cluster.local:8080/v1']
+#    orchestrator_model: str [Default: 'orchestrator-8b']
+#    question: str [Default: 'What is the approximate ratio of the population of Tokyo to the population of Paris, and which city has higher population density?']
+#    specialist_endpoint: str [Default: 'http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1']
+#    specialist_model: str [Default: 'llama-32-3b-instruct']
+#    tool_definitions_json: str [Default: '[{"type": "function", "function": {"name": "enhance_reasoning", "description": "tool to enhance answer model reasoning. analyze the problem, write code, execute it and return intermidiate results that will help solve the problem", "parameters": {"properties": {"model": {"description": "The model used to reason. Choices: ['reasoner-1', 'reasoner-2', 'reasoner-3']. reasoner-1 demonstrates strong understanding and reasoning capabilities. reasoner-2 can analyze some problems. reasoner-3 can reason over context.\nModel | price per million input tokens | price per million output tokens | average latency\nreasoner-1 | $1.25 | $10 | 31s\nreasoner-2 | $0.25 | $2 | 25s\nreasoner-3 | $0.8 | $0.8 | 9s", "type": "string"}}, "required": ["model"], "type": "object"}}}, {"type": "function", "function": {"name": "answer", "description": "give the final answer. Not allowed to call if documents is empty.", "parameters": {"properties": {"model": {"description": "The model used to answer. Choices: ['answer-1', 'answer-2', 'answer-3', 'answer-4', 'answer-math-1', 'answer-math-2']. answer-1 exhibits strong functional calling abilities. answer-math-1 can solve moderate math problems. answer-math-2 handles basic math.\nModel | price/M input | price/M output | avg latency\nanswer-1 | $1.25 | $10 | 96s\nanswer-2 | $0.25 | $2 | 27s\nanswer-3 | $0.9 | $0.9 | 15s\nanswer-4 | $0.8 | $0.8 | 11s\nanswer-math-1 | $0.9 | $0.9 | 13s\nanswer-math-2 | $0.2 | $0.2 | 9s", "type": "string"}}, "required": ["model"], "type": "object"}}}, {"type": "function", "function": {"name": "search", "description": "Search for missing information", "parameters": {"properties": {"model": {"description": "The model used to search. Choices: ['search-1', 'search-2', 'search-3']. search-1 identifies missing info and writes concise queries. search-2 reasons over context. search-3 writes queries.\nModel | price/M input | price/M output | avg latency\nsearch-1 | $1.25 | $10 | 22s\nsearch-2 | $0.25 | $2 | 16s\nsearch-3 | $0.8 | $0.8 | 8s", "type": "string"}}, "required": ["model"], "type": "object"}}}]']
+components:
+  comp-compare-results:
+    executorLabel: exec-compare-results
+    inputDefinitions:
+      parameters:
+        direct_json:
+          parameterType: STRING
+        orchestrated_json:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-direct-answer:
+    executorLabel: exec-direct-answer
+    inputDefinitions:
+      parameters:
+        max_output_tokens:
+          parameterType: NUMBER_INTEGER
+        question:
+          parameterType: STRING
+        specialist_endpoint:
+          parameterType: STRING
+        specialist_model:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-orchestrated-answer:
+    executorLabel: exec-orchestrated-answer
+    inputDefinitions:
+      parameters:
+        max_output_tokens:
+          parameterType: NUMBER_INTEGER
+        max_turns:
+          parameterType: NUMBER_INTEGER
+        model_mapping_json:
+          parameterType: STRING
+        orchestrator_endpoint:
+          parameterType: STRING
+        orchestrator_model:
+          parameterType: STRING
+        question:
+          parameterType: STRING
+        tool_definitions_json:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-compare-results:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - compare_results
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef compare_results(direct_json: str, orchestrated_json: str) ->\
+          \ str:\n    \"\"\"Compare direct vs orchestrated results side by side.\"\
+          \"\"\n    import json\n\n    direct = json.loads(direct_json)\n    orch\
+          \ = json.loads(orchestrated_json)\n\n    lines = [\n        \"=\" * 60,\n\
+          \        \"  ToolOrchestra: Direct vs Orchestrated Comparison\",\n     \
+          \   \"=\" * 60,\n        \"\",\n        f\"Question: {direct['question']}\"\
+          ,\n        \"\",\n        \"-\" * 60,\n        \"  PATH 1: Direct (Single\
+          \ Model, No Orchestration)\",\n        \"-\" * 60,\n        f\"  Model:\
+          \ {direct.get('model', 'N/A')}\",\n        f\"  Latency: {direct['latency_ms']}ms\"\
+          ,\n        f\"  Answer: {direct['answer'][:500]}\",\n        \"\",\n   \
+          \     \"-\" * 60,\n        \"  PATH 2: Orchestrated (Orchestrator-8B + Specialists)\"\
+          ,\n        \"-\" * 60,\n        f\"  Turns: {orch['total_turns']}\",\n \
+          \       f\"  Latency: {orch['total_latency_ms']}ms\",\n        f\"  Est.\
+          \ cost: ${orch.get('est_total_cost_usd', 0):.6f}\",\n        \"\",\n   \
+          \     \"  Tool trace:\",\n    ]\n    for t in orch.get(\"tool_trace\", []):\n\
+          \        lines.append(\n            f\"    Turn {t['turn']}: {t['tool']}\
+          \ -> {t.get('specialist', '')} \"\n            f\"[{t.get('latency_ms',\
+          \ '')}ms, ${t.get('est_cost_usd', 0):.6f}]\"\n        )\n    lines.extend([\n\
+          \        \"\",\n        f\"  Answer: {orch['answer'][:500]}\",\n       \
+          \ \"\",\n        \"=\" * 60,\n        \"  KEY DIFFERENCES\",\n        \"\
+          =\" * 60,\n        f\"  Direct: 1 model call, {direct['latency_ms']}ms\"\
+          ,\n        f\"  Orchestrated: {orch['total_turns']} specialist calls, {orch['total_latency_ms']}ms\"\
+          ,\n        f\"  Orchestrated used: {', '.join(t['tool'] for t in orch.get('tool_trace',\
+          \ []))}\",\n        \"\",\n        \"  The orchestrator searched for information,\
+          \ reasoned about it,\",\n        \"  and then had a specialist produce the\
+          \ final answer -- rather\",\n        \"  than relying on a single model's\
+          \ knowledge alone.\",\n        \"=\" * 60,\n    ])\n\n    summary = \"\\\
+          n\".join(lines)\n    print(summary)\n    return summary\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+    exec-direct-answer:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - direct_answer
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'httpx>=0.28.0'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef direct_answer(\n    question: str,\n    specialist_endpoint:\
+          \ str,\n    specialist_model: str,\n    max_output_tokens: int,\n) -> str:\n\
+          \    \"\"\"Ask the specialist model directly -- no orchestration, no tools.\"\
+          \"\"\n    import json\n    import time\n\n    import httpx\n\n    start\
+          \ = time.monotonic()\n    payload = {\n        \"model\": specialist_model,\n\
+          \        \"messages\": [\n            {\"role\": \"system\", \"content\"\
+          : \"Please reason step by step and give a clear, concise final answer.\"\
+          },\n            {\"role\": \"user\", \"content\": question.strip()},\n \
+          \       ],\n        \"max_tokens\": max_output_tokens,\n        \"temperature\"\
+          : 1.0,\n    }\n    url = f\"{specialist_endpoint.rstrip('/')}/chat/completions\"\
+          \n    with httpx.Client(timeout=120.0) as client:\n        resp = client.post(url,\
+          \ json=payload)\n        resp.raise_for_status()\n        data = resp.json()\n\
+          \n    content = data[\"choices\"][0][\"message\"].get(\"content\", \"\"\
+          )\n    if \"</think>\" in content:\n        content = content.split(\"</think>\"\
+          )[-1].strip()\n\n    latency = round((time.monotonic() - start) * 1000)\n\
+          \n    return json.dumps({\n        \"question\": question.strip(),\n   \
+          \     \"answer\": content,\n        \"method\": \"direct (single model,\
+          \ no orchestration)\",\n        \"model\": specialist_model,\n        \"\
+          latency_ms\": latency,\n    })\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+    exec-orchestrated-answer:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - orchestrated_answer
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'httpx>=0.28.0'\
+          \ 'duckduckgo-search>=7.0.0'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.16.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef orchestrated_answer(\n    question: str,\n    orchestrator_endpoint:\
+          \ str,\n    orchestrator_model: str,\n    model_mapping_json: str,\n   \
+          \ tool_definitions_json: str,\n    max_turns: int,\n    max_output_tokens:\
+          \ int,\n) -> str:\n    \"\"\"Run the full ToolOrchestra orchestration loop.\"\
+          \"\"\n    import json\n    import os\n    import subprocess\n    import\
+          \ tempfile\n    import time\n\n    import httpx\n\n    tools = json.loads(tool_definitions_json)\n\
+          \    model_mapping = json.loads(model_mapping_json)\n\n    TOOL_PRICING\
+          \ = {\n        \"reasoner-1\": {\"input\": 1.25, \"output\": 10.0},\n  \
+          \      \"reasoner-2\": {\"input\": 0.25, \"output\": 2.0},\n        \"reasoner-3\"\
+          : {\"input\": 0.8, \"output\": 0.8},\n        \"answer-1\": {\"input\":\
+          \ 1.25, \"output\": 10.0},\n        \"answer-2\": {\"input\": 0.25, \"output\"\
+          : 2.0},\n        \"answer-3\": {\"input\": 0.9, \"output\": 0.9},\n    \
+          \    \"answer-4\": {\"input\": 0.8, \"output\": 0.8},\n        \"answer-math-1\"\
+          : {\"input\": 0.9, \"output\": 0.9},\n        \"answer-math-2\": {\"input\"\
+          : 0.2, \"output\": 0.2},\n        \"search-1\": {\"input\": 1.25, \"output\"\
+          : 10.0},\n        \"search-2\": {\"input\": 0.25, \"output\": 2.0},\n  \
+          \      \"search-3\": {\"input\": 0.8, \"output\": 0.8},\n    }\n    total_cost\
+          \ = 0.0\n\n    def chat_completion(endpoint, model, messages, tools_list=None,\
+          \ max_tokens=2048):\n        url = f\"{endpoint.rstrip('/')}/chat/completions\"\
+          \n        payload = {\"model\": model, \"messages\": messages, \"max_tokens\"\
+          : max_tokens, \"temperature\": 1.0}\n        if tools_list:\n          \
+          \  payload[\"tools\"] = tools_list\n            payload[\"tool_choice\"\
+          ] = \"auto\"\n        with httpx.Client(timeout=180.0) as client:\n    \
+          \        resp = client.post(url, json=payload)\n            resp.raise_for_status()\n\
+          \            return resp.json()\n\n    def call_specialist(endpoint, model,\
+          \ messages, max_tokens=1024):\n        return chat_completion(endpoint,\
+          \ model, messages, max_tokens=max_tokens)\n\n    def handle_search(problem,\
+          \ context_str, spec_endpoint, spec_model):\n        prompt = f\"{context_str}\\\
+          n\\nProblem: {problem}\\n\\nGenerate a concise web search query to find\
+          \ the missing information. Output only the query, nothing else.\"\n    \
+          \    msgs = [{\"role\": \"system\", \"content\": \"You generate concise\
+          \ search queries.\"}, {\"role\": \"user\", \"content\": prompt}]\n     \
+          \   resp = call_specialist(spec_endpoint, spec_model, msgs, max_tokens=128)\n\
+          \        query = resp[\"choices\"][0][\"message\"].get(\"content\", problem).strip().strip('\"\
+          ').strip(\"'\")\n        try:\n            from duckduckgo_search import\
+          \ DDGS\n            results = []\n            with DDGS() as ddgs:\n   \
+          \             for r in ddgs.text(query, max_results=3):\n              \
+          \      results.append(f\"Title: {r.get('title','')}\\n{r.get('body','')}\\\
+          nURL: {r.get('href','')}\")\n            return \"\\n\\n\".join(results)\
+          \ if results else f\"No results for: {query}\", query\n        except Exception:\n\
+          \            return f\"Search unavailable for: {query}\", query\n\n    def\
+          \ handle_reasoning(problem, context_str, spec_endpoint, spec_model):\n \
+          \       prompt = (f\"{context_str}\\n\\nQuestion: {problem}\\n\\n\"\n  \
+          \                \"Instead of directly answering, write Python code that\
+          \ gives intermediate results. \"\n                  \"Wrap code within ```python\
+          \ and ```. Make it self-contained.\")\n        msgs = [{\"role\": \"system\"\
+          , \"content\": \"You are an expert analyst. Write executable Python code.\"\
+          }, {\"role\": \"user\", \"content\": prompt}]\n        resp = call_specialist(spec_endpoint,\
+          \ spec_model, msgs, max_tokens=1024)\n        content = resp[\"choices\"\
+          ][0][\"message\"].get(\"content\", \"\")\n        if \"</think>\" in content:\n\
+          \            content = content.split(\"</think>\")[-1].strip()\n       \
+          \ generated_code = \"\"\n        exec_result = \"\"\n        if \"```python\"\
+          \ in content:\n            try:\n                generated_code = content.split(\"\
+          ```python\")[-1].split(\"```\")[0].strip()\n            except (IndexError,\
+          \ ValueError):\n                pass\n        if generated_code:\n     \
+          \       try:\n                with tempfile.NamedTemporaryFile(mode=\"w\"\
+          , suffix=\".py\", delete=False, dir=\"/tmp\") as f:\n                  \
+          \  f.write(generated_code)\n                    code_path = f.name\n   \
+          \             result = subprocess.run([\"python3\", code_path], timeout=30,\
+          \ capture_output=True, text=True)\n                exec_result = result.stdout.strip()\n\
+          \                os.unlink(code_path)\n            except Exception:\n \
+          \               exec_result = \"[Code execution failed]\"\n        parts\
+          \ = []\n        if generated_code:\n            parts.append(f\"Code:\\\
+          n```python\\n{generated_code}\\n```\")\n        if exec_result:\n      \
+          \      parts.append(f\"Output: {exec_result}\")\n        if not parts:\n\
+          \            parts.append(content)\n        return \"\\n\".join(parts)\n\
+          \n    def handle_answer(problem, context_str, spec_endpoint, spec_model):\n\
+          \        prompt = f\"{context_str}\\n\\nProblem:\\n{problem}\"\n       \
+          \ msgs = [{\"role\": \"system\", \"content\": \"Please reason step by step\
+          \ and give a clear, concise final answer.\"}, {\"role\": \"user\", \"content\"\
+          : prompt}]\n        resp = call_specialist(spec_endpoint, spec_model, msgs,\
+          \ max_tokens=1024)\n        content = resp[\"choices\"][0][\"message\"].get(\"\
+          content\", \"\")\n        if \"</think>\" in content:\n            content\
+          \ = content.split(\"</think>\")[-1].strip()\n        return content\n\n\
+          \    doc_list = []\n    reasoning_list = []\n    tool_trace = []\n    used_tools\
+          \ = []\n    final_answer = \"\"\n    total_start = time.monotonic()\n\n\
+          \    for turn in range(max_turns):\n        ctx_parts = []\n        if doc_list:\n\
+          \            ctx_parts.append(\"Documents:\\n\" + \"\\n\\n\".join(f\"Doc\
+          \ {i+1}: {d[:1200]}\" for i, d in enumerate(doc_list)))\n        if reasoning_list:\n\
+          \            ctx_parts.append(\"Previous analysis:\\n\" + \"\\n\\n\".join(reasoning_list))\n\
+          \        context_str = \"\\n\\n\".join(ctx_parts)\n\n        user_content\
+          \ = f\"Problem: {question}\"\n        if context_str:\n            user_content\
+          \ += f\"\\n\\n{context_str}\"\n        user_content += \"\\n\\nChoose an\
+          \ appropriate tool.\"\n\n        current_tools = list(tools)\n        if\
+          \ turn == max_turns - 1 and (doc_list or reasoning_list):\n            current_tools\
+          \ = [t for t in tools if t[\"function\"][\"name\"] == \"answer\"]\n    \
+          \    elif len(used_tools) > 1 and used_tools[-1] == used_tools[-2]:\n  \
+          \          current_tools = [t for t in tools if t[\"function\"][\"name\"\
+          ] != used_tools[-1]]\n\n        try:\n            orch_resp = chat_completion(\n\
+          \                orchestrator_endpoint, orchestrator_model,\n          \
+          \      [{\"role\": \"system\", \"content\": \"You are good at using tools.\"\
+          }, {\"role\": \"user\", \"content\": user_content}],\n                tools_list=current_tools,\
+          \ max_tokens=max_output_tokens,\n            )\n        except Exception\
+          \ as e:\n            tool_trace.append({\"turn\": turn, \"tool\": \"error\"\
+          , \"error\": str(e)})\n            break\n\n        msg = orch_resp[\"choices\"\
+          ][0][\"message\"]\n        tc_list = msg.get(\"tool_calls\", [])\n     \
+          \   if not tc_list:\n            content = msg.get(\"content\", \"\")\n\
+          \            if content and \"</think>\" in content:\n                final_answer\
+          \ = content.split(\"</think>\")[-1].strip()\n            elif content:\n\
+          \                final_answer = content\n            break\n\n        tc\
+          \ = tc_list[0]\n        tool_name = tc[\"function\"][\"name\"]\n       \
+          \ try:\n            tool_args = json.loads(tc[\"function\"][\"arguments\"\
+          ])\n        except (json.JSONDecodeError, KeyError):\n            tool_args\
+          \ = {}\n        model_id = tool_args.get(\"model\", \"\")\n        used_tools.append(tool_name)\n\
+          \        spec_info = model_mapping.get(model_id, {})\n        spec_endpoint\
+          \ = spec_info.get(\"endpoint\", orchestrator_endpoint)\n        spec_model\
+          \ = spec_info.get(\"model\", orchestrator_model)\n        start = time.monotonic()\n\
+          \n        pricing = TOOL_PRICING.get(model_id, {\"input\": 0.0, \"output\"\
+          : 0.0})\n        est_tokens = len(question.split()) * 2 + len(context_str.split())\
+          \ * 2 + 300\n        step_cost = (est_tokens * pricing[\"input\"]) / 1_000_000\n\
+          \n        if tool_name == \"search\":\n            out, query = handle_search(question,\
+          \ context_str, spec_endpoint, spec_model)\n            doc_list.append(out)\n\
+          \            total_cost += step_cost\n            tool_trace.append({\"\
+          turn\": turn, \"tool\": \"search\", \"specialist\": model_id, \"query\"\
+          : query, \"latency_ms\": round((time.monotonic() - start) * 1000), \"est_cost_usd\"\
+          : round(step_cost, 6)})\n        elif tool_name == \"enhance_reasoning\"\
+          :\n            reasoning = handle_reasoning(question, context_str, spec_endpoint,\
+          \ spec_model)\n            if reasoning:\n                reasoning_list.append(reasoning)\n\
+          \            total_cost += step_cost\n            tool_trace.append({\"\
+          turn\": turn, \"tool\": \"enhance_reasoning\", \"specialist\": model_id,\
+          \ \"latency_ms\": round((time.monotonic() - start) * 1000), \"est_cost_usd\"\
+          : round(step_cost, 6)})\n        elif tool_name == \"answer\":\n       \
+          \     final_answer = handle_answer(question, context_str, spec_endpoint,\
+          \ spec_model)\n            total_cost += step_cost\n            tool_trace.append({\"\
+          turn\": turn, \"tool\": \"answer\", \"specialist\": model_id, \"latency_ms\"\
+          : round((time.monotonic() - start) * 1000), \"est_cost_usd\": round(step_cost,\
+          \ 6)})\n            break\n\n    total_latency = round((time.monotonic()\
+          \ - total_start) * 1000)\n    if not final_answer:\n        final_answer\
+          \ = \"(No final answer within allowed turns)\"\n\n    return json.dumps({\n\
+          \        \"question\": question.strip(),\n        \"answer\": final_answer,\n\
+          \        \"method\": \"orchestrated (Orchestrator-8B + specialists)\",\n\
+          \        \"tool_trace\": tool_trace,\n        \"total_turns\": len(tool_trace),\n\
+          \        \"total_latency_ms\": total_latency,\n        \"est_total_cost_usd\"\
+          : round(total_cost, 6),\n    })\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+pipelineInfo:
+  description: 'Side-by-side comparison: Direct specialist answer vs Orchestrator-8B
+    coordinated answer. Shows the value of orchestration.'
+  name: toolorchestra-comparison
+root:
+  dag:
+    tasks:
+      compare-results:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-compare-results
+        dependentTasks:
+        - direct-answer
+        - orchestrated-answer
+        inputs:
+          parameters:
+            direct_json:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: direct-answer
+            orchestrated_json:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: orchestrated-answer
+        taskInfo:
+          name: compare-results
+      direct-answer:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-direct-answer
+        inputs:
+          parameters:
+            max_output_tokens:
+              componentInputParameter: max_output_tokens
+            question:
+              componentInputParameter: question
+            specialist_endpoint:
+              componentInputParameter: specialist_endpoint
+            specialist_model:
+              componentInputParameter: specialist_model
+        taskInfo:
+          name: direct-answer
+      orchestrated-answer:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-orchestrated-answer
+        inputs:
+          parameters:
+            max_output_tokens:
+              componentInputParameter: max_output_tokens
+            max_turns:
+              componentInputParameter: max_turns
+            model_mapping_json:
+              componentInputParameter: model_mapping_json
+            orchestrator_endpoint:
+              componentInputParameter: orchestrator_endpoint
+            orchestrator_model:
+              componentInputParameter: orchestrator_model
+            question:
+              componentInputParameter: question
+            tool_definitions_json:
+              componentInputParameter: tool_definitions_json
+        taskInfo:
+          name: orchestrated-answer
+  inputDefinitions:
+    parameters:
+      max_output_tokens:
+        defaultValue: 2048.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      max_turns:
+        defaultValue: 10.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      model_mapping_json:
+        defaultValue: '{"search-1": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "search-2": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "search-3": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "reasoner-1": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "reasoner-2": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "reasoner-3": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "answer-1": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "answer-2": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "answer-3": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "answer-4": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "answer-math-1": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}, "answer-math-2": {"endpoint": "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1",
+          "model": "llama-32-3b-instruct"}}'
+        isOptional: true
+        parameterType: STRING
+      orchestrator_endpoint:
+        defaultValue: http://orchestrator-8b-predictor.orchestrator-rhoai.svc.cluster.local:8080/v1
+        isOptional: true
+        parameterType: STRING
+      orchestrator_model:
+        defaultValue: orchestrator-8b
+        isOptional: true
+        parameterType: STRING
+      question:
+        defaultValue: What is the approximate ratio of the population of Tokyo to
+          the population of Paris, and which city has higher population density?
+        isOptional: true
+        parameterType: STRING
+      specialist_endpoint:
+        defaultValue: http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1
+        isOptional: true
+        parameterType: STRING
+      specialist_model:
+        defaultValue: llama-32-3b-instruct
+        isOptional: true
+        parameterType: STRING
+      tool_definitions_json:
+        defaultValue: '[{"type": "function", "function": {"name": "enhance_reasoning",
+          "description": "tool to enhance answer model reasoning. analyze the problem,
+          write code, execute it and return intermidiate results that will help solve
+          the problem", "parameters": {"properties": {"model": {"description": "The
+          model used to reason. Choices: [''reasoner-1'', ''reasoner-2'', ''reasoner-3''].
+          reasoner-1 demonstrates strong understanding and reasoning capabilities.
+          reasoner-2 can analyze some problems. reasoner-3 can reason over context.\nModel
+          | price per million input tokens | price per million output tokens | average
+          latency\nreasoner-1 | $1.25 | $10 | 31s\nreasoner-2 | $0.25 | $2 | 25s\nreasoner-3
+          | $0.8 | $0.8 | 9s", "type": "string"}}, "required": ["model"], "type":
+          "object"}}}, {"type": "function", "function": {"name": "answer", "description":
+          "give the final answer. Not allowed to call if documents is empty.", "parameters":
+          {"properties": {"model": {"description": "The model used to answer. Choices:
+          [''answer-1'', ''answer-2'', ''answer-3'', ''answer-4'', ''answer-math-1'',
+          ''answer-math-2'']. answer-1 exhibits strong functional calling abilities.
+          answer-math-1 can solve moderate math problems. answer-math-2 handles basic
+          math.\nModel | price/M input | price/M output | avg latency\nanswer-1 |
+          $1.25 | $10 | 96s\nanswer-2 | $0.25 | $2 | 27s\nanswer-3 | $0.9 | $0.9 |
+          15s\nanswer-4 | $0.8 | $0.8 | 11s\nanswer-math-1 | $0.9 | $0.9 | 13s\nanswer-math-2
+          | $0.2 | $0.2 | 9s", "type": "string"}}, "required": ["model"], "type":
+          "object"}}}, {"type": "function", "function": {"name": "search", "description":
+          "Search for missing information", "parameters": {"properties": {"model":
+          {"description": "The model used to search. Choices: [''search-1'', ''search-2'',
+          ''search-3'']. search-1 identifies missing info and writes concise queries.
+          search-2 reasons over context. search-3 writes queries.\nModel | price/M
+          input | price/M output | avg latency\nsearch-1 | $1.25 | $10 | 22s\nsearch-2
+          | $0.25 | $2 | 16s\nsearch-3 | $0.8 | $0.8 | 8s", "type": "string"}}, "required":
+          ["model"], "type": "object"}}}]'
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.16.0
