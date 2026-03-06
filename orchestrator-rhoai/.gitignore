@@ -59,6 +59,9 @@ models/
 *.faiss
 *.index
 
+# Node.js
+node_modules/
+
 # Build artifacts
 site/
 

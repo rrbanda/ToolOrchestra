@@ -1113,12 +1113,57 @@ async def orchestrate(question: str, max_turns: int = 30):
 | #  | Task                                                     | Type      |
 |----|----------------------------------------------------------|-----------|
 | 01 | Create demo question set (10 diverse questions)          | Data      |
+|    | See [Demo Question Set](#demo-question-set) below        |           |
 | 02 | Run full orchestration, collect traces                   | Testing   |
 | 03 | Build Gradio demo UI                                     | Code      |
 | 04 | Deploy demo UI as RHOAI Workbench or standalone          | Deploy    |
 | 05 | Create Grafana dashboard for orchestration metrics       | Observ.   |
 | 06 | Record demo walkthrough (terminal or video)              | Docs      |
 | 07 | Write `docs/architecture/data-flow.md` with real traces  | Docs      |
+
+### Demo Question Set
+
+Ten prompts designed to exercise every aspect of the paper's thesis:
+cost-aware routing, multi-turn orchestration, search, code execution, and
+specialist model selection.
+
+| #  | Category              | Prompt                                                                                                                                                   | Tests                                      |
+|----|-----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------|
+| 01 | Factual comparison    | What is the population of Tokyo compared to Paris?                                                                                                       | search → answer routing; cheap search model |
+| 02 | Multi-hop factual     | What is the approximate ratio of the population of Tokyo to the population of Paris, and which city has higher population density?                        | search + computation + answer               |
+| 03 | Multi-hop biography   | What is the birth year of the chemist who first synthesized captopril, and what university did they attend?                                               | multi-search → answer                       |
+| 04 | Computation (primes)  | What is the sum of all prime numbers between 10,000 and 10,100?                                                                                          | enhance_reasoning (code execution)          |
+| 05 | Computation (finance) | If you invest $5,000 at 7.3% annual interest compounded monthly, how much do you have after 17 years and 4 months? Round to the nearest cent.            | enhance_reasoning (code execution)          |
+| 06 | Expert STEM           | In the Diels-Alder reaction between cyclopentadiene and maleic anhydride, what is the endo:exo product ratio at room temperature?                        | search → enhance_reasoning → answer         |
+| 07 | Mixed easy + hard     | What is the capital of France, and what is the closed-form solution to the integral of e^(-x²) from negative infinity to positive infinity?               | cost routing: cheap model for easy, expensive for hard |
+| 08 | Combinatorics         | How many distinct ways can you tile a 4×10 grid using 1×2 dominoes?                                                                                      | enhance_reasoning (code execution)          |
+| 09 | Current events        | Who won the Nobel Prize in Physics in 2024 and for what contribution?                                                                                    | search (requires web retrieval)             |
+| 10 | Multi-step reasoning  | The architect who designed the Sydney Opera House also designed a church in what city, and in what year was that church completed?                         | multi-search → answer                       |
+
+**What to verify for each prompt:**
+
+- Tool trace shows the orchestrator chose the right tool type (search vs
+  reasoning vs answer) for each turn.
+- Cost-aware routing: cheaper specialist models (e.g., `search-3`,
+  `answer-4`) are used for straightforward sub-tasks; expensive models
+  (e.g., `answer-1`, `reasoner-1`) are reserved for hard steps.
+- Multi-turn behavior: the orchestrator does not try to answer immediately
+  when it lacks information — it searches or reasons first.
+- The orchestrated answer is more accurate than a direct single-model answer
+  (validated via the comparison pipeline).
+
+**Validated example (Population Compare — prompt 01):**
+
+```
+Prompt: "What is the population of Tokyo compared to Paris?"
+Trace:
+  Turn 0: search via Llama-3.2-3B → 5 results (0.5s, 98+12 tok)
+  Turn 1: search via Llama-3.2-3B → 5 results (0.5s, 410+12 tok)
+  Turn 2: answer via Gemini 2.5 Pro → final answer (17.4s, 621+769 tok)
+Result: 3 turns, 6,507 tokens, $0.0086
+Key observation: Orchestrator used cheap search model, escalated to
+expensive answer model only for the final synthesis.
+```
 
 ### Exit Criteria
 - [ ] 5+ diverse questions answered correctly through full orchestration

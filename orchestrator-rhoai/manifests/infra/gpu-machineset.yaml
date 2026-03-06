@@ -6,7 +6,7 @@ metadata:
   labels:
     machine.openshift.io/cluster-api-cluster: ocp-2qkbk
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       machine.openshift.io/cluster-api-cluster: ocp-2qkbk
