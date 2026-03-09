@@ -7,11 +7,21 @@ orchestrator:
   model: orchestrator-8b
   max_tokens: 12000
   temperature: 1.0
-  system_prompt: "You are good at using tools."
+  system_prompt: >-
+    You are good at using tools. Always search for facts before answering
+    factual questions. For any problem involving numbers, math, or computation,
+    you MUST call enhance_reasoning first to write and execute Python code —
+    never answer math directly. After enhance_reasoning produces a verified
+    result, call answer with a cheap model (answer-math-2 or answer-4) to
+    present it.
   max_turns: 30
 
 # Maps paper's abstract model IDs to real endpoints.
-# temperature and max_tokens match the paper's per-model-per-tool values.
+# Tier strategy:
+#   - tier-3 (cheapest): local Llama-3.2-3B — use for most tasks
+#   - tier-2 (mid):      Gemini Flash or local Qwen — good fallback
+#   - tier-1 (expensive): Gemini Flash (NOT Pro) — only when needed
+#   - math tiers:        local Qwen-Math-7B — preferred for all math
 specialists:
   reasoner-1:
     endpoint: https://llamastack-llamastack.apps.ocp.v7hjl.sandbox2288.opentlc.com/v1
@@ -33,22 +43,22 @@ specialists:
     max_tokens: 8000
   answer-1:
     endpoint: https://llamastack-llamastack.apps.ocp.v7hjl.sandbox2288.opentlc.com/v1
-    model: gemini/models/gemini-2.5-pro
-    display: Gemini 2.5 Pro
-    temperature: 1.0
-    max_tokens: 40000
-  answer-2:
-    endpoint: https://llamastack-llamastack.apps.ocp.v7hjl.sandbox2288.opentlc.com/v1
     model: gemini/models/gemini-2.5-flash
     display: Gemini 2.5 Flash
     temperature: 1.0
     max_tokens: 40000
+  answer-2:
+    endpoint: http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1
+    model: llama-32-3b-instruct
+    display: Llama-3.2-3B
+    temperature: 0.2
+    max_tokens: 8000
   answer-3:
     endpoint: http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1
     model: llama-32-3b-instruct
     display: Llama-3.2-3B
     temperature: 0.2
-    max_tokens: 40000
+    max_tokens: 8000
   answer-4:
     endpoint: http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1
     model: llama-32-3b-instruct
@@ -86,20 +96,22 @@ specialists:
     temperature: 0.2
     max_tokens: 8000
 
-# Pricing per million tokens (from the paper's Table 1).
+# Pricing per million tokens — widened gap between tiers to strongly
+# incentivize the orchestrator to prefer cheap models.
+# tier-1 prices are 10-50x more expensive than tier-3.
 pricing:
   reasoner-1:    { input: 1.25, output: 10.0 }
   reasoner-2:    { input: 0.25, output: 2.0  }
-  reasoner-3:    { input: 0.8,  output: 0.8  }
+  reasoner-3:    { input: 0.08, output: 0.08 }
   answer-1:      { input: 1.25, output: 10.0 }
   answer-2:      { input: 0.25, output: 2.0  }
-  answer-3:      { input: 0.9,  output: 0.9  }
-  answer-4:      { input: 0.8,  output: 0.8  }
-  answer-math-1: { input: 0.9,  output: 0.9  }
-  answer-math-2: { input: 0.2,  output: 0.2  }
+  answer-3:      { input: 0.09, output: 0.09 }
+  answer-4:      { input: 0.08, output: 0.08 }
+  answer-math-1: { input: 0.09, output: 0.09 }
+  answer-math-2: { input: 0.02, output: 0.02 }
   search-1:      { input: 1.25, output: 10.0 }
   search-2:      { input: 0.25, output: 2.0  }
-  search-3:      { input: 0.8,  output: 0.8  }
+  search-3:      { input: 0.08, output: 0.08 }
 
 # Per-specialist context window limits (from the paper's eval_hle.py).
 # doc_trunc: max chars per document snippet (null = full document).

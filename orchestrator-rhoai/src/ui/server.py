@@ -153,11 +153,11 @@ def cut_to_tokens(text: str, max_tokens: int) -> tuple[str, int]:
 # vLLM / LLM helpers
 # ---------------------------------------------------------------------------
 
-_http_client = httpx.Client(timeout=180.0, verify=False)
+_http_client = httpx.Client(timeout=300.0, verify=False)
 
 
 def chat_completion(endpoint, model, messages, *, tools_list=None,
-                    max_tokens=512, temperature=1.0):
+                    max_tokens=512, temperature=1.0, _retries=2):
     url = f"{endpoint.rstrip('/')}/chat/completions"
     payload = {
         "model": model, "messages": messages,
@@ -166,9 +166,24 @@ def chat_completion(endpoint, model, messages, *, tools_list=None,
     if tools_list:
         payload["tools"] = tools_list
         payload["tool_choice"] = "auto"
-    resp = _http_client.post(url, json=payload)
-    resp.raise_for_status()
-    return resp.json()
+    last_err = None
+    for attempt in range(_retries + 1):
+        try:
+            resp = _http_client.post(url, json=payload)
+            resp.raise_for_status()
+            return resp.json()
+        except (httpx.HTTPStatusError, httpx.TimeoutException,
+                httpx.NetworkError, httpx.ProtocolError,
+                ValueError) as exc:
+            last_err = exc
+            if attempt < _retries:
+                time.sleep(2 ** attempt)
+                continue
+    return {
+        "choices": [{"message": {"content": None, "role": "assistant"}}],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "_error": str(last_err),
+    }
 
 
 def call_specialist(endpoint, model, messages, max_tokens=1024, temperature=0.0,
@@ -269,6 +284,8 @@ def _extract_thinking(raw: str) -> str:
 
 
 def strip_think(content: str) -> str:
+    if not content:
+        return ""
     if "</think>" in content:
         return content.split("</think>")[-1].strip()
     return content.strip()
@@ -322,7 +339,7 @@ def handle_search(problem, context_str, spec_endpoint, spec_model, model_id=""):
     resp = call_specialist(spec_endpoint, spec_model, msgs,
                            max_tokens=SEARCH_MAX_TOKENS_DEFAULT, model_id=model_id)
     usage = _usage(resp)
-    content = strip_think(resp["choices"][0]["message"].get("content", ""))
+    content = strip_think(resp["choices"][0]["message"].get("content") or "")
     query = None
     if "<query>" in content and "</query>" in content:
         query = content.split("<query>")[-1].split("</query>")[0].strip()
@@ -342,7 +359,7 @@ def handle_reasoning(problem, context_str, spec_endpoint, spec_model, model_id="
     resp = call_specialist(spec_endpoint, spec_model, msgs,
                            max_tokens=REASONING_MAX_TOKENS_DEFAULT, model_id=model_id)
     usage = _usage(resp)
-    content = strip_think(resp["choices"][0]["message"].get("content", ""))
+    content = strip_think(resp["choices"][0]["message"].get("content") or "")
 
     generated_code = ""
     exec_result = ""
@@ -392,7 +409,7 @@ def handle_answer(problem, context_str, spec_endpoint, spec_model, model_id=""):
         resp = call_specialist(spec_endpoint, spec_model, msgs,
                                max_tokens=ANSWER_MAX_TOKENS_DEFAULT, model_id=model_id)
         usage = _usage(resp)
-        content = strip_think(resp["choices"][0]["message"].get("content", ""))
+        content = strip_think(resp["choices"][0]["message"].get("content") or "")
         pred = ""
         if "\\boxed{" in content:
             try:
@@ -413,18 +430,19 @@ def handle_answer(problem, context_str, spec_endpoint, spec_model, model_id=""):
         resp = call_specialist(spec_endpoint, spec_model, msgs,
                                max_tokens=ANSWER_MAX_TOKENS_DEFAULT, model_id=model_id)
         usage = _usage(resp)
-        content = strip_think(resp["choices"][0]["message"].get("content", ""))
+        content = strip_think(resp["choices"][0]["message"].get("content") or "")
         pred = ""
         if "<answer>" in content and "</answer>" in content:
             pred = content.split("<answer>")[-1].split("</answer>")[0].strip()
         if not pred:
             pred = content.strip()
 
-    if _is_garbage(pred):
-        pred = "[Model produced invalid output — try a different specialist or rephrase the question]"
+    garbage = _is_garbage(pred)
+    if garbage:
+        pred = "[Model produced invalid output]"
     if _is_garbage(content):
         content = pred
-    return content, pred, usage
+    return content, pred, usage, garbage
 
 
 # ---------------------------------------------------------------------------
@@ -558,6 +576,25 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+import re
+
+_MATH_RE = re.compile(
+    r"(?:\d+\s*[!*/+\-^])|"           # digits followed by operator
+    r"(?:factorial|permut|combin)|"     # math keywords
+    r"(?:prime|divisib|gcd|lcm)|"       # number theory
+    r"(?:solv|integr|deriv|f\(x\))|"   # calculus / algebra
+    r"(?:compound.{0,10}interest)|"     # finance math
+    r"(?:sqrt|log|sin|cos|tan)|"        # functions
+    r"(?:\d+\s*%)|"                     # percentages
+    r"(?:calculat|comput|evaluat)",     # action words
+    re.IGNORECASE,
+)
+
+
+def _looks_like_math(question: str) -> bool:
+    return bool(_MATH_RE.search(question))
+
+
 # ---------------------------------------------------------------------------
 # Orchestration SSE generator
 # ---------------------------------------------------------------------------
@@ -576,6 +613,8 @@ def orchestrate_sse(question: str, max_turns: int):
     final_answer = ""
     total_cost = 0.0
     total_tokens = {"prompt": 0, "completion": 0}
+    is_math = _looks_like_math(question)
+    reasoning_done = False
 
     for turn in range(max_turns):
         context_str = build_context(question, doc_list, code_list, attempt_list)
@@ -660,6 +699,14 @@ def orchestrate_sse(question: str, max_turns: int):
             })
             continue
 
+        if is_math and tool_name == "answer" and not reasoning_done:
+            tool_name = "enhance_reasoning"
+            model_id = "reasoner-3"
+            tool_args = {"model": model_id}
+
+        if tool_name == "enhance_reasoning":
+            reasoning_done = True
+
         used_tools.append(tool_name)
 
         spec_info = MODEL_MAPPING.get(model_id, {})
@@ -741,7 +788,7 @@ def orchestrate_sse(question: str, max_turns: int):
 
         elif tool_name == "answer":
             spec_ctx = build_specialist_context("answer", question, doc_list, code_list, spec_model, model_id)
-            full_response, pred, spec_usage = handle_answer(
+            full_response, pred, spec_usage, garbage = handle_answer(
                 question, spec_ctx, spec_endpoint, spec_model, model_id=model_id
             )
             latency = round((time.monotonic() - start) * 1000)
@@ -760,17 +807,76 @@ def orchestrate_sse(question: str, max_turns: int):
             }
             tool_trace.append(trace_entry)
 
-            final_answer = pred
+            if garbage:
+                escalate_id = "answer-1"
+                esc_info = MODEL_MAPPING.get(escalate_id, {})
+                esc_endpoint = esc_info.get("endpoint", ORCHESTRATOR_ENDPOINT)
+                esc_model = esc_info.get("model", ORCHESTRATOR_MODEL)
+                esc_dk, esc_dn = resolve_display_model(escalate_id)
 
-            yield _sse("answer_final", {
-                **trace_entry,
-                "prediction": pred[:500],
-                "is_final": True,
-                "diagram_key": diagram_key, "display_name": display_name,
-                "total_cost": round(total_cost, 6),
-            })
+                yield _sse("answer_retry", {
+                    **trace_entry,
+                    "prediction": pred[:500],
+                    "is_final": False,
+                    "diagram_key": diagram_key, "display_name": display_name,
+                    "total_cost": round(total_cost, 6),
+                    "reason": "Model produced invalid output — escalating to stronger model",
+                    "escalate_to": esc_dn,
+                })
 
-            break
+                esc_start = time.monotonic()
+                esc_ctx = build_specialist_context("answer", question, doc_list, code_list, esc_model, escalate_id)
+                esc_response, esc_pred, esc_usage, _ = handle_answer(
+                    question, esc_ctx, esc_endpoint, esc_model, model_id=escalate_id
+                )
+                esc_latency = round((time.monotonic() - esc_start) * 1000)
+                esc_in = esc_usage["prompt_tokens"]
+                esc_out = esc_usage["completion_tokens"]
+                total_tokens["prompt"] += esc_in
+                total_tokens["completion"] += esc_out
+                esc_pricing = TOOL_PRICING.get(escalate_id, {"input": 0.0, "output": 0.0})
+                esc_cost = (esc_in * esc_pricing["input"] + esc_out * esc_pricing["output"]) / 1_000_000
+                total_cost += esc_cost
+
+                esc_trace = {
+                    "turn": turn, "tool": "answer (escalated)",
+                    "specialist": f"{esc_dn} ({escalate_id})",
+                    "latency_ms": esc_latency,
+                    "in_tokens": esc_in, "out_tokens": esc_out,
+                    "est_cost_usd": round(esc_cost, 6),
+                }
+                tool_trace.append(esc_trace)
+                final_answer = esc_pred
+
+                yield _sse("answer_final", {
+                    **esc_trace,
+                    "prediction": esc_pred[:500],
+                    "is_final": True,
+                    "diagram_key": esc_dk, "display_name": esc_dn,
+                    "total_cost": round(total_cost, 6),
+                })
+                break
+
+            if attempt_list:
+                final_answer = pred
+                yield _sse("answer_final", {
+                    **trace_entry,
+                    "prediction": pred[:500],
+                    "is_final": True,
+                    "diagram_key": diagram_key, "display_name": display_name,
+                    "total_cost": round(total_cost, 6),
+                })
+                break
+            else:
+                attempt_list.append({"model": model_id, "answer": pred})
+                yield _sse("answer_attempt", {
+                    **trace_entry,
+                    "prediction": pred[:500],
+                    "is_final": False,
+                    "diagram_key": diagram_key, "display_name": display_name,
+                    "total_cost": round(total_cost, 6),
+                    "note": "First attempt stored — orchestrator will refine",
+                })
         else:
             tool_trace.append({"turn": turn, "tool": tool_name, "note": "Unknown tool"})
 
